@@ -7,9 +7,50 @@ interface PageProps {
   params: Promise<{ id: string }>;
 }
 
+const CLIENT_NAME = "Fam. De Groot";
+const CLIENT_ADDRESS = "Deldenerstraat 42, Hengelo";
+const WORKER = "Kees Jansen";
+const NOTES =
+  "Heg gesnoeid aan de voorzijde (ca. 15 meter). Borders bijgewerkt en onkruid verwijderd. " +
+  "Gazon gemaaid en randen gestoken. Let op: appelboom in de achtertuin heeft een dode tak, " +
+  "advies om deze door een boomverzorger te laten verwijderen voor de herfst.";
+
+function generateEmailDraft(clientName: string, notes: string, date: string) {
+  return `Beste ${clientName},
+
+Hierbij stuur ik u het onderhoudsrapport van de werkzaamheden die op ${date} zijn uitgevoerd.
+
+Uitgevoerde werkzaamheden:
+${notes}
+
+Het rapport met fotografisch verslag (voor/na) vindt u als bijlage bij deze e-mail.
+
+Heeft u vragen of wilt u een vervolgafspraak inplannen? Neem gerust contact met ons op.
+
+Met vriendelijke groet,
+
+Jan de Vries
+GroenWerk Hengelo
++31 (0)74 123 4567
+info@groenwerk-hengelo.nl`;
+}
+
 export default function JobDetailPage({ params }: PageProps) {
   const { id } = use(params);
   const [generating, setGenerating] = useState(false);
+  const [reportGenerated, setReportGenerated] = useState(false);
+  const dateStr = new Date().toLocaleDateString("nl-NL", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  const [emailDraft, setEmailDraft] = useState(
+    generateEmailDraft(CLIENT_NAME, NOTES, dateStr)
+  );
+  const [emailTo, setEmailTo] = useState("");
+  const [emailSubject, setEmailSubject] = useState(
+    `Onderhoudsrapport ${CLIENT_NAME} - ${dateStr}`
+  );
 
   const handleGenerateReport = async () => {
     setGenerating(true);
@@ -18,17 +59,10 @@ export default function JobDetailPage({ params }: PageProps) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          client: {
-            name: "Fam. De Groot",
-            address: "Deldenerstraat 42, Hengelo",
-          },
-          worker: "Kees Jansen",
-          jobDescription:
-            "Tuinonderhoud: heg snoeien, borders bijwerken, gazon maaien",
-          notes:
-            "Heg gesnoeid aan de voorzijde (ca. 15 meter). Borders bijgewerkt en onkruid verwijderd. " +
-            "Gazon gemaaid en randen gestoken. Let op: appelboom in de achtertuin heeft een dode tak, " +
-            "advies om deze door een boomverzorger te laten verwijderen voor de herfst.",
+          style: "invoice",
+          client: { name: CLIENT_NAME, address: CLIENT_ADDRESS, postcode: "7551 AB Hengelo" },
+          worker: WORKER,
+          notes: NOTES,
           beforeTime: "08:32",
           afterTime: "11:45",
         }),
@@ -37,6 +71,7 @@ export default function JobDetailPage({ params }: PageProps) {
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       window.open(url, "_blank");
+      setReportGenerated(true);
     } finally {
       setGenerating(false);
     }
@@ -58,16 +93,10 @@ export default function JobDetailPage({ params }: PageProps) {
       <div className="bg-white rounded-xl p-5 border border-gray-100">
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="font-semibold text-lg">Fam. De Groot</h2>
-            <p className="text-sm text-gray-500">
-              Deldenerstraat 42, Hengelo
-            </p>
-            <p className="text-sm text-gray-400 mt-1">
-              Medewerker: Kees Jansen
-            </p>
-            <p className="text-sm text-gray-400">
-              Datum: {new Date().toLocaleDateString("nl-NL")}
-            </p>
+            <h2 className="font-semibold text-lg">{CLIENT_NAME}</h2>
+            <p className="text-sm text-gray-500">{CLIENT_ADDRESS}</p>
+            <p className="text-sm text-gray-400 mt-1">Medewerker: {WORKER}</p>
+            <p className="text-sm text-gray-400">Datum: {dateStr}</p>
           </div>
           <span className="text-xs font-medium px-3 py-1 rounded-full bg-green-50 text-green-800">
             Foto&apos;s compleet
@@ -111,26 +140,77 @@ export default function JobDetailPage({ params }: PageProps) {
         <textarea
           placeholder="Voeg opmerkingen toe voor de klant..."
           className="w-full p-3 border border-gray-200 rounded-lg resize-none h-24 text-sm"
-          defaultValue="Heg gesnoeid aan de voorzijde (ca. 15 meter). Borders bijgewerkt en onkruid verwijderd. Gazon gemaaid en randen gestoken. Let op: appelboom in de achtertuin heeft een dode tak, advies om deze door een boomverzorger te laten verwijderen voor de herfst."
+          defaultValue={NOTES}
         />
       </div>
 
-      {/* Actions */}
-      <div className="flex gap-3">
-        <button
-          onClick={handleGenerateReport}
-          disabled={generating}
-          className="flex-1 py-3 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {generating ? "Rapport genereren..." : "Genereer rapport (PDF)"}
-        </button>
-        <a
-          href="/api/report/generate"
-          target="_blank"
-          className="py-3 px-6 bg-white text-gray-600 border border-gray-200 rounded-xl font-medium hover:bg-gray-50 transition text-center"
-        >
-          Demo PDF
-        </a>
+      {/* Generate report */}
+      <button
+        onClick={handleGenerateReport}
+        disabled={generating}
+        className="w-full py-3 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {generating ? "Rapport genereren..." : "Genereer rapport (PDF)"}
+      </button>
+
+      {/* Concept e-mail */}
+      <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+        <div className="px-5 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+          <h3 className="font-medium text-sm">Concept e-mail naar klant</h3>
+          {reportGenerated && (
+            <span className="text-xs text-green-600 font-medium">PDF bijlage klaar</span>
+          )}
+        </div>
+
+        <div className="p-5 space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Aan</label>
+              <input
+                type="email"
+                value={emailTo}
+                onChange={(e) => setEmailTo(e.target.value)}
+                placeholder="klant@email.nl"
+                className="w-full p-2.5 border border-gray-200 rounded-lg text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Onderwerp</label>
+              <input
+                type="text"
+                value={emailSubject}
+                onChange={(e) => setEmailSubject(e.target.value)}
+                className="w-full p-2.5 border border-gray-200 rounded-lg text-sm"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Bericht</label>
+            <textarea
+              value={emailDraft}
+              onChange={(e) => setEmailDraft(e.target.value)}
+              className="w-full p-3 border border-gray-200 rounded-lg resize-none text-sm font-mono leading-relaxed"
+              rows={14}
+            />
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              disabled={!emailTo}
+              className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Verstuur e-mail {reportGenerated ? "+ PDF bijlage" : "(genereer eerst rapport)"}
+            </button>
+            <button className="py-2.5 px-4 bg-gray-100 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-200 transition">
+              Kopieer tekst
+            </button>
+          </div>
+
+          <p className="text-xs text-gray-400">
+            De e-mail handtekening kun je aanpassen in Instellingen &gt; Rapportage.
+          </p>
+        </div>
       </div>
 
       <p className="text-xs text-gray-400 text-center">
