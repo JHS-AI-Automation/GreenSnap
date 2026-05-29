@@ -312,8 +312,8 @@ export function GreenSnapReport({ data }: { data: ReportData }) {
       <Page size="A4" style={s.page}>
         <View style={s.header}>
           <View style={s.logoBlock}>
-            <Text style={s.logoText}>ULAND AI</Text>
-            <Text style={s.logoSubtext}>Powered by GreenSnap</Text>
+            <Text style={s.logoText}>JHS AUTOMATION</Text>
+            <Text style={s.logoSubtext}>AI-Powered Rapportage</Text>
           </View>
           <Text style={s.reportLabel}>ONDERHOUDSRAPPORT</Text>
         </View>
@@ -448,7 +448,7 @@ export function GreenSnapReport({ data }: { data: ReportData }) {
 
         <View style={s.footer} fixed>
           <Text style={s.footerText}>
-            Dit rapport is automatisch gegenereerd door GreenSnap
+            Dit rapport is automatisch gegenereerd door JHS Automation
           </Text>
           <Text style={s.footerPage}>Pagina 2 van 2</Text>
         </View>

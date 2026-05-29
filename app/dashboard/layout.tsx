@@ -19,10 +19,10 @@ export default function DashboardLayout({
             Overzicht
           </Link>
           <Link
-            href="/dashboard/unsorted"
+            href="/dashboard/upload"
             className="text-gray-600 hover:text-green-700 transition"
           >
-            Ongesorteerd
+            Foto uploaden
           </Link>
           <Link
             href="/dashboard/settings"
