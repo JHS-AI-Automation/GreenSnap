@@ -1,13 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sendMessage } from "@/lib/telegram";
+import { sendMessage, downloadFile } from "@/lib/telegram";
 import { getSession, updateSession, clearSession } from "@/lib/bot-sessions";
+import { supabase } from "@/lib/supabase";
 
-// Demo clients for matching
-const CLIENTS = [
-  { name: "Fam. Smit", address: "Brinkstraat 15, Hengelo" },
-  { name: "Kantoor De Brinck", address: "Marktstraat 8, Hengelo" },
-  { name: "Fam. De Groot", address: "Deldenerstraat 42, Hengelo" },
-];
+const DEMO_TENANT = "11111111-1111-1111-1111-111111111111";
+const DEMO_USER = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+
+async function getClients() {
+  const { data } = await supabase
+    .from("clients")
+    .select("id, name, address")
+    .eq("tenant_id", DEMO_TENANT);
+  return data ?? [];
+}
+
+async function findJobForClient(clientId: string) {
+  const { data } = await supabase
+    .from("jobs")
+    .select("id, status")
+    .eq("client_id", clientId)
+    .eq("scheduled_date", new Date().toISOString().split("T")[0])
+    .limit(1)
+    .single();
+  return data;
+}
 
 export async function POST(request: NextRequest) {
   const update = await request.json();
@@ -24,8 +40,8 @@ export async function POST(request: NextRequest) {
   if (text === "/start") {
     await sendMessage(
       chatId,
-      "🌿 <b>GreenSnap Bot</b>\n\n" +
-        "Stuur een foto en ik maak er een voor/na-rapportage van.\n\n" +
+      "📸 <b>Foto-rapportage Bot</b>\n\n" +
+        "Stuur een foto en ik sla hem op als voor- of na-foto.\n\n" +
         "Zo werkt het:\n" +
         "1. Stuur een foto\n" +
         "2. Kies: voor-foto of na-foto\n" +
@@ -72,7 +88,9 @@ export async function POST(request: NextRequest) {
       photoType: isBefore ? "before" : "after",
     });
 
-    const clientButtons = CLIENTS.map((c) => [{ text: c.name }]);
+    const clients = await getClients();
+    const clientButtons = clients.map((c) => [{ text: c.name }]);
+
     await sendMessage(
       chatId,
       `${isBefore ? "🟠" : "🟢"} ${isBefore ? "Voor" : "Na"}-foto. Voor welke klant?`,
@@ -87,36 +105,73 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  // Client selection
-  if (session.step === "waiting_client") {
-    const matchedClient = CLIENTS.find(
-      (c) => c.name.toLowerCase() === text || text.includes(c.name.toLowerCase().split(".")[1]?.trim() ?? "___")
+  // Client selection - download photo, upload to Supabase, save record
+  if (session.step === "waiting_client" && session.photoFileId) {
+    const clients = await getClients();
+    const matchedClient = clients.find(
+      (c) =>
+        c.name.toLowerCase() === text ||
+        text.includes(c.name.toLowerCase().split(".")[1]?.trim() ?? "___")
     );
 
     if (!matchedClient) {
-      await sendMessage(chatId, "Ik ken die klant niet. Kies een van de opties, of typ de naam precies.");
+      await sendMessage(chatId, "Ik ken die klant niet. Kies een van de opties.");
       return NextResponse.json({ ok: true });
     }
 
-    // TODO: save to Supabase (photo file, type, client, user chat ID)
-    const typeLabel = session.photoType === "before" ? "voor" : "na";
+    // Download photo from Telegram
+    const photoBuffer = await downloadFile(session.photoFileId);
+    const timestamp = Date.now();
+    const storagePath = `${DEMO_TENANT}/${matchedClient.id}/${session.photoType}-${timestamp}.jpg`;
+
+    // Upload to Supabase Storage
+    const { error: uploadError } = await supabase.storage
+      .from("photos")
+      .upload(storagePath, photoBuffer, {
+        contentType: "image/jpeg",
+        upsert: false,
+      });
+
+    if (uploadError) {
+      console.error("[Bot] Upload error:", uploadError);
+      await sendMessage(chatId, "❌ Fout bij uploaden. Probeer opnieuw.");
+      clearSession(chatId);
+      return NextResponse.json({ ok: true });
+    }
+
+    // Find today's job for this client
+    const job = await findJobForClient(matchedClient.id);
+
+    // Save photo record in database
+    const { error: insertError } = await supabase.from("photos").insert({
+      job_id: job?.id ?? null,
+      tenant_id: DEMO_TENANT,
+      user_id: DEMO_USER,
+      type: session.photoType,
+      storage_path: storagePath,
+      source: "telegram",
+      matched: !!job,
+    });
+
+    if (insertError) {
+      console.error("[Bot] Insert error:", insertError);
+    }
+
+    // Update job status
+    if (job) {
+      const newStatus = session.photoType === "before" ? "before_done" : "photos_complete";
+      await supabase.from("jobs").update({ status: newStatus }).eq("id", job.id);
+    }
+
+    const typeLabel = session.photoType === "before" ? "Voor" : "Na";
     await sendMessage(
       chatId,
-      `✅ ${typeLabel.charAt(0).toUpperCase() + typeLabel.slice(1)}-foto opgeslagen voor <b>${matchedClient.name}</b>!\n` +
-        `📍 ${matchedClient.address}\n\n` +
-        "Stuur nog een foto, of je bent klaar voor nu.",
-      {
-        reply_markup: { remove_keyboard: true },
-      }
+      `✅ ${typeLabel}-foto opgeslagen voor <b>${matchedClient.name}</b>!\n` +
+        `📍 ${matchedClient.address}\n` +
+        (job ? `📋 Gekoppeld aan opdracht van vandaag\n` : `📋 Opgeslagen als losse foto\n`) +
+        "\nStuur nog een foto, of je bent klaar voor nu.",
+      { reply_markup: { remove_keyboard: true } }
     );
-
-    console.log("[GreenSnap Bot] Photo saved:", {
-      chatId,
-      photoFileId: session.photoFileId,
-      type: session.photoType,
-      client: matchedClient.name,
-      timestamp: new Date().toISOString(),
-    });
 
     clearSession(chatId);
     return NextResponse.json({ ok: true });
