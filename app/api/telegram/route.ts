@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sendMessage, downloadFile } from "@/lib/telegram";
 import { getSession, updateSession, clearSession } from "@/lib/bot-sessions";
-import { supabase } from "@/lib/supabase";
+import { getServerClient } from "@/lib/supabase";
+
+const supabase = getServerClient();
 import { findNearestClient } from "@/lib/matching";
 
 const DEMO_TENANT = "11111111-1111-1111-1111-111111111111";
@@ -83,6 +85,12 @@ async function savePhotos(
 }
 
 export async function POST(request: NextRequest) {
+  const webhookSecret = request.headers.get("x-telegram-bot-api-secret-token");
+  const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  if (expectedSecret && webhookSecret !== expectedSecret) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const update = await request.json();
   const message = update.message;
   if (!message) return NextResponse.json({ ok: true });
