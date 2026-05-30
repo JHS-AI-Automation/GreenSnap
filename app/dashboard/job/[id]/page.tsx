@@ -15,8 +15,26 @@ const NOTES =
   "Gazon gemaaid en randen gestoken. Let op: appelboom in de achtertuin heeft een dode tak, " +
   "advies om deze door een boomverzorger te laten verwijderen voor de herfst.";
 
-function generateEmailDraft(clientName: string, notes: string, date: string) {
-  return `Beste ${clientName},
+type EmailStyle = "kort" | "standaard" | "uitgebreid";
+
+const EMAIL_TEMPLATES: Record<EmailStyle, { label: string; description: string; generate: (client: string, notes: string, date: string) => string }> = {
+  kort: {
+    label: "Kort",
+    description: "Alleen rapport als bijlage, minimale tekst",
+    generate: (client, _notes, date) =>
+      `Beste ${client},
+
+Bijgaand het onderhoudsrapport van ${date}.
+
+Met vriendelijke groet,
+Jan de Vries
+GroenWerk Hengelo`,
+  },
+  standaard: {
+    label: "Standaard",
+    description: "Samenvatting werkzaamheden + rapport",
+    generate: (client, notes, date) =>
+      `Beste ${client},
 
 Hierbij stuur ik u het onderhoudsrapport van de werkzaamheden die op ${date} zijn uitgevoerd.
 
@@ -28,12 +46,35 @@ Het rapport met fotografisch verslag (voor/na) vindt u als bijlage bij deze e-ma
 Heeft u vragen of wilt u een vervolgafspraak inplannen? Neem gerust contact met ons op.
 
 Met vriendelijke groet,
+Jan de Vries
+GroenWerk Hengelo
++31 (0)74 123 4567`,
+  },
+  uitgebreid: {
+    label: "Uitgebreid",
+    description: "Persoonlijke toon, advies, vervolgafspraak",
+    generate: (client, notes, date) =>
+      `Beste ${client},
 
+Vandaag (${date}) hebben wij het reguliere tuinonderhoud bij u uitgevoerd. Hieronder een overzicht van wat er is gedaan en een aantal adviezen.
+
+Uitgevoerde werkzaamheden:
+${notes}
+
+In de bijlage vindt u het volledige rapport met foto's van de situatie voor en na het onderhoud. Zo kunt u precies zien wat er is gebeurd.
+
+Adviezen en aandachtspunten:
+Mochten er naar aanleiding van dit rapport nog extra werkzaamheden gewenst zijn, denk ik graag met u mee over de beste aanpak en planning.
+
+Zullen we een vervolgafspraak inplannen? Ik hoor het graag.
+
+Met vriendelijke groet,
 Jan de Vries
 GroenWerk Hengelo
 +31 (0)74 123 4567
-info@groenwerk-hengelo.nl`;
-}
+info@groenwerk-hengelo.nl`,
+  },
+};
 
 export default function JobDetailPage({ params }: PageProps) {
   const { id } = use(params);
@@ -44,13 +85,19 @@ export default function JobDetailPage({ params }: PageProps) {
     month: "long",
     year: "numeric",
   });
+  const [emailStyle, setEmailStyle] = useState<EmailStyle>("standaard");
   const [emailDraft, setEmailDraft] = useState(
-    generateEmailDraft(CLIENT_NAME, NOTES, dateStr)
+    EMAIL_TEMPLATES.standaard.generate(CLIENT_NAME, NOTES, dateStr)
   );
   const [emailTo, setEmailTo] = useState("");
   const [emailSubject, setEmailSubject] = useState(
     `Onderhoudsrapport ${CLIENT_NAME} - ${dateStr}`
   );
+
+  const switchEmailStyle = (style: EmailStyle) => {
+    setEmailStyle(style);
+    setEmailDraft(EMAIL_TEMPLATES[style].generate(CLIENT_NAME, NOTES, dateStr));
+  };
 
   const handleGenerateReport = async () => {
     setGenerating(true);
@@ -163,6 +210,29 @@ export default function JobDetailPage({ params }: PageProps) {
         </div>
 
         <div className="p-5 space-y-3">
+          {/* Email style selector */}
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-2">Mailtoon</label>
+            <div className="flex gap-2">
+              {(Object.entries(EMAIL_TEMPLATES) as [EmailStyle, typeof EMAIL_TEMPLATES.kort][]).map(([key, tmpl]) => (
+                <button
+                  key={key}
+                  onClick={() => switchEmailStyle(key)}
+                  className={`flex-1 py-2 px-3 rounded-lg text-xs font-medium transition ${
+                    emailStyle === key
+                      ? "bg-green-600 text-white"
+                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  }`}
+                >
+                  <div>{tmpl.label}</div>
+                  <div className={`mt-0.5 font-normal ${emailStyle === key ? "text-green-100" : "text-gray-400"}`}>
+                    {tmpl.description}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">Aan</label>

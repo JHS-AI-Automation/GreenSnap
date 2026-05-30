@@ -1,14 +1,15 @@
 interface BotSession {
-  step: "idle" | "waiting_type" | "waiting_client";
-  photoFileId: string | null;
+  step: "idle" | "waiting_type" | "waiting_client" | "collecting_photos";
+  photoFileIds: string[];
   photoType: "before" | "after" | null;
+  clientId: string | null;
   clientName: string | null;
   timestamp: number;
 }
 
 const sessions = new Map<number, BotSession>();
 
-const SESSION_TIMEOUT_MS = 10 * 60 * 1000;
+const SESSION_TIMEOUT_MS = 15 * 60 * 1000;
 
 export function getSession(chatId: number): BotSession {
   const existing = sessions.get(chatId);
@@ -17,8 +18,9 @@ export function getSession(chatId: number): BotSession {
   }
   const fresh: BotSession = {
     step: "idle",
-    photoFileId: null,
+    photoFileIds: [],
     photoType: null,
+    clientId: null,
     clientName: null,
     timestamp: Date.now(),
   };

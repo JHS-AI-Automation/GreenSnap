@@ -21,12 +21,12 @@ export function haversineDistance(
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-export function findNearestClient(
+export function findNearestClient<T extends { lat: number; lng: number }>(
   lat: number,
   lng: number,
-  clients: Client[]
-): Client | null {
-  let nearest: Client | null = null;
+  clients: T[]
+): T | null {
+  let nearest: T | null = null;
   let minDistance = Infinity;
 
   for (const client of clients) {
