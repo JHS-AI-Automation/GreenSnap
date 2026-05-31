@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { findNearestClient, isWithinTimeWindow } from "@/lib/matching";
-import type { Client, Photo } from "@/types/database";
+import { getServerClient } from "@/lib/supabase";
+
+const DEMO_TENANT = "11111111-1111-1111-1111-111111111111";
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
@@ -12,35 +14,22 @@ export async function POST(request: NextRequest) {
     takenAt: string;
   };
 
-  // TODO: replace with Supabase queries
-  const demoClients: Client[] = [
-    {
-      id: "dddddddd-dddd-dddd-dddd-dddddddddddd",
-      tenant_id: "11111111-1111-1111-1111-111111111111",
-      name: "Fam. Smit",
-      address: "Brinkstraat 15, Hengelo",
-      lat: 52.266,
-      lng: 6.793,
-      notes: null,
-      created_at: new Date().toISOString(),
-    },
-  ];
+  const supabase = getServerClient();
 
-  const result: {
-    matched: boolean;
-    clientId: string | null;
-    jobId: string | null;
-    method: string;
-  } = {
+  const { data: clients } = await supabase
+    .from("clients")
+    .select("id, name, address, lat, lng")
+    .eq("tenant_id", DEMO_TENANT);
+
+  const result = {
     matched: false,
-    clientId: null,
-    jobId: null,
+    clientId: null as string | null,
+    jobId: null as string | null,
     method: "none",
   };
 
-  // Step 1: GPS match
-  if (lat !== null && lng !== null) {
-    const nearestClient = findNearestClient(lat, lng, demoClients);
+  if (lat !== null && lng !== null && clients) {
+    const nearestClient = findNearestClient(lat, lng, clients);
     if (nearestClient) {
       result.matched = true;
       result.clientId = nearestClient.id;
@@ -48,16 +37,20 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Step 2: time window check for after-photos
   if (result.matched && type === "after") {
-    // TODO: query Supabase for before-photos of this user today
-    const demoBeforePhotos: Photo[] = [];
-    const matchingBefore = demoBeforePhotos.find(
-      (p) =>
-        p.user_id === userId &&
-        p.type === "before" &&
-        isWithinTimeWindow(p.taken_at, takenAt)
+    const today = new Date().toISOString().split("T")[0];
+    const { data: beforePhotos } = await supabase
+      .from("photos")
+      .select("id, user_id, job_id, taken_at, type")
+      .eq("tenant_id", DEMO_TENANT)
+      .eq("user_id", userId)
+      .eq("type", "before")
+      .gte("taken_at", `${today}T00:00:00`);
+
+    const matchingBefore = beforePhotos?.find(
+      (p) => isWithinTimeWindow(p.taken_at, takenAt)
     );
+
     if (matchingBefore?.job_id) {
       result.jobId = matchingBefore.job_id;
     }
