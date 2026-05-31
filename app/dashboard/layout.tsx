@@ -31,6 +31,12 @@ export default function DashboardLayout({
               Overzicht
             </Link>
             <Link
+              href="/dashboard/jobs/new"
+              className="px-3 py-1.5 rounded-lg text-sm text-gray-600 hover:bg-gray-100 hover:text-green-700 transition"
+            >
+              Nieuwe opdracht
+            </Link>
+            <Link
               href="/dashboard/upload"
               className="px-3 py-1.5 rounded-lg text-sm text-gray-600 hover:bg-gray-100 hover:text-green-700 transition"
             >
