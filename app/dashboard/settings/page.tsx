@@ -90,7 +90,9 @@ export default function SettingsPage() {
 
   // Add client form
   const [newName, setNewName] = useState("");
-  const [newAddress, setNewAddress] = useState("");
+  const [newStreet, setNewStreet] = useState("");
+  const [newHouseNumber, setNewHouseNumber] = useState("");
+  const [newCity, setNewCity] = useState("");
   const [newNotes, setNewNotes] = useState("");
   const [adding, setAdding] = useState(false);
   const [addResult, setAddResult] = useState<{ ok: boolean; message: string } | null>(null);
@@ -135,15 +137,17 @@ export default function SettingsPage() {
   // Add client
   async function handleAddClient(e: React.FormEvent) {
     e.preventDefault();
-    if (!newName || !newAddress) return;
+    if (!newName || !newStreet || !newHouseNumber || !newCity) return;
     setAdding(true);
     setAddResult(null);
+
+    const address = `${newStreet} ${newHouseNumber}, ${newCity}`;
 
     try {
       const res = await fetch("/api/clients", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newName, address: newAddress, notes: newNotes }),
+        body: JSON.stringify({ name: newName, address, notes: newNotes }),
       });
       const data = await res.json();
 
@@ -153,7 +157,9 @@ export default function SettingsPage() {
           message: `${data.client.name} toegevoegd (${data.geocoded.lat.toFixed(4)}, ${data.geocoded.lng.toFixed(4)})`,
         });
         setNewName("");
-        setNewAddress("");
+        setNewStreet("");
+        setNewHouseNumber("");
+        setNewCity("");
         setNewNotes("");
         fetchClients();
       } else {
@@ -258,13 +264,20 @@ export default function SettingsPage() {
             <p className="text-sm text-gray-500 mb-4">Het adres wordt automatisch omgezet naar GPS-coordinaten voor locatie-matching.</p>
 
             <form onSubmit={handleAddClient} className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <InputField label="Klantnaam" value={newName} onChange={setNewName} placeholder="Fam. Jansen" />
-                <InputField label="Adres" value={newAddress} onChange={setNewAddress} placeholder="Straatnaam 12, Stad" />
+              <InputField label="Klantnaam" value={newName} onChange={setNewName} placeholder="Fam. Jansen" />
+
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <InputField label="Straat" value={newStreet} onChange={setNewStreet} placeholder="Graven" />
+                </div>
+                <InputField label="Huisnummer" value={newHouseNumber} onChange={setNewHouseNumber} placeholder="26" />
               </div>
+
+              <InputField label="Plaats" value={newCity} onChange={setNewCity} placeholder="Deventer" />
+
               <InputField label="Notities (optioneel)" value={newNotes} onChange={setNewNotes} placeholder="Bv. sleutel onder bloempot" />
 
-              <button type="submit" disabled={adding || !newName || !newAddress}
+              <button type="submit" disabled={adding || !newName || !newStreet || !newHouseNumber || !newCity}
                 className="w-full py-2.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition disabled:opacity-50"
               >
                 {adding ? "Adres zoeken en opslaan..." : "Toevoegen"}

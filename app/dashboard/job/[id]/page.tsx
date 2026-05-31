@@ -1,117 +1,157 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useState, useEffect } from "react";
 import Link from "next/link";
 
 interface PageProps {
   params: Promise<{ id: string }>;
 }
 
-const CLIENT_NAME = "Fam. De Groot";
-const CLIENT_ADDRESS = "Deldenerstraat 42, Hengelo";
-const WORKER = "Kees Jansen";
-const NOTES =
-  "Heg gesnoeid aan de voorzijde (ca. 15 meter). Borders bijgewerkt en onkruid verwijderd. " +
-  "Gazon gemaaid en randen gestoken. Let op: appelboom in de achtertuin heeft een dode tak, " +
-  "advies om deze door een boomverzorger te laten verwijderen voor de herfst.";
+interface PhotoData {
+  id: string;
+  type: "before" | "after";
+  storage_path: string;
+  taken_at: string;
+  caption: string | null;
+  source: string;
+  url: string | null;
+}
+
+interface JobDetail {
+  id: string;
+  status: string;
+  scheduled_date: string;
+  notes: string | null;
+  client: { id: string; name: string; address: string } | null;
+  user: { id: string; name: string } | null;
+  photos: PhotoData[];
+}
 
 type EmailStyle = "kort" | "standaard" | "uitgebreid";
 
-const EMAIL_TEMPLATES: Record<EmailStyle, { label: string; description: string; generate: (client: string, notes: string, date: string) => string }> = {
+const EMAIL_TEMPLATES: Record<
+  EmailStyle,
+  {
+    label: string;
+    description: string;
+    generate: (client: string, notes: string, date: string) => string;
+  }
+> = {
   kort: {
     label: "Kort",
-    description: "Alleen rapport als bijlage, minimale tekst",
+    description: "Alleen rapport als bijlage",
     generate: (client, _notes, date) =>
-      `Beste ${client},
-
-Bijgaand het onderhoudsrapport van ${date}.
-
-Met vriendelijke groet,
-Jan de Vries
-GroenWerk Hengelo`,
+      `Beste ${client},\n\nBijgaand het onderhoudsrapport van ${date}.\n\nMet vriendelijke groet,\nJan de Vries\nGroenWerk Hengelo`,
   },
   standaard: {
     label: "Standaard",
     description: "Samenvatting werkzaamheden + rapport",
     generate: (client, notes, date) =>
-      `Beste ${client},
-
-Hierbij stuur ik u het onderhoudsrapport van de werkzaamheden die op ${date} zijn uitgevoerd.
-
-Uitgevoerde werkzaamheden:
-${notes}
-
-Het rapport met fotografisch verslag (voor/na) vindt u als bijlage bij deze e-mail.
-
-Heeft u vragen of wilt u een vervolgafspraak inplannen? Neem gerust contact met ons op.
-
-Met vriendelijke groet,
-Jan de Vries
-GroenWerk Hengelo
-+31 (0)74 123 4567`,
+      `Beste ${client},\n\nHierbij stuur ik u het onderhoudsrapport van de werkzaamheden die op ${date} zijn uitgevoerd.\n\nUitgevoerde werkzaamheden:\n${notes || "(geen notities)"}\n\nHet rapport met fotografisch verslag (voor/na) vindt u als bijlage.\n\nHeeft u vragen? Neem gerust contact op.\n\nMet vriendelijke groet,\nJan de Vries\nGroenWerk Hengelo`,
   },
   uitgebreid: {
     label: "Uitgebreid",
-    description: "Persoonlijke toon, advies, vervolgafspraak",
+    description: "Persoonlijk, met advies",
     generate: (client, notes, date) =>
-      `Beste ${client},
-
-Vandaag (${date}) hebben wij het reguliere tuinonderhoud bij u uitgevoerd. Hieronder een overzicht van wat er is gedaan en een aantal adviezen.
-
-Uitgevoerde werkzaamheden:
-${notes}
-
-In de bijlage vindt u het volledige rapport met foto's van de situatie voor en na het onderhoud. Zo kunt u precies zien wat er is gebeurd.
-
-Adviezen en aandachtspunten:
-Mochten er naar aanleiding van dit rapport nog extra werkzaamheden gewenst zijn, denk ik graag met u mee over de beste aanpak en planning.
-
-Zullen we een vervolgafspraak inplannen? Ik hoor het graag.
-
-Met vriendelijke groet,
-Jan de Vries
-GroenWerk Hengelo
-+31 (0)74 123 4567
-info@groenwerk-hengelo.nl`,
+      `Beste ${client},\n\nVandaag (${date}) hebben wij het tuinonderhoud bij u uitgevoerd.\n\nUitgevoerde werkzaamheden:\n${notes || "(geen notities)"}\n\nIn de bijlage vindt u het rapport met voor/na foto's.\n\nMochten er nog extra werkzaamheden gewenst zijn, denk ik graag mee. Zullen we een vervolgafspraak inplannen?\n\nMet vriendelijke groet,\nJan de Vries\nGroenWerk Hengelo`,
   },
+};
+
+const STATUS_LABEL: Record<string, { label: string; color: string }> = {
+  open: { label: "Wacht op foto's", color: "bg-gray-100 text-gray-700" },
+  before_done: { label: "Voor-foto ontvangen", color: "bg-yellow-50 text-yellow-800" },
+  photos_complete: { label: "Foto's compleet", color: "bg-green-50 text-green-800" },
+  report_ready: { label: "Rapport klaar", color: "bg-blue-50 text-blue-800" },
+  sent: { label: "Verstuurd", color: "bg-gray-50 text-gray-500" },
 };
 
 export default function JobDetailPage({ params }: PageProps) {
   const { id } = use(params);
+  const [job, setJob] = useState<JobDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [reportGenerated, setReportGenerated] = useState(false);
-  const dateStr = new Date().toLocaleDateString("nl-NL", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
   const [emailStyle, setEmailStyle] = useState<EmailStyle>("standaard");
-  const [emailDraft, setEmailDraft] = useState(
-    EMAIL_TEMPLATES.standaard.generate(CLIENT_NAME, NOTES, dateStr)
-  );
   const [emailTo, setEmailTo] = useState("");
-  const [emailSubject, setEmailSubject] = useState(
-    `Onderhoudsrapport ${CLIENT_NAME} - ${dateStr}`
-  );
+  const [emailDraft, setEmailDraft] = useState("");
+  const [emailSubject, setEmailSubject] = useState("");
+  const [notesDraft, setNotesDraft] = useState("");
 
-  const switchEmailStyle = (style: EmailStyle) => {
+  useEffect(() => {
+    fetch(`/api/jobs/${id}`)
+      .then((r) => {
+        if (!r.ok) {
+          setNotFound(true);
+          return null;
+        }
+        return r.json();
+      })
+      .then((data: JobDetail | null) => {
+        if (data) {
+          setJob(data);
+          setNotesDraft(data.notes ?? "");
+          const dateStr = new Date(data.scheduled_date).toLocaleDateString("nl-NL", {
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+          });
+          const clientName = data.client?.name ?? "klant";
+          setEmailDraft(
+            EMAIL_TEMPLATES.standaard.generate(clientName, data.notes ?? "", dateStr)
+          );
+          setEmailSubject(`Onderhoudsrapport ${clientName} - ${dateStr}`);
+        }
+      })
+      .finally(() => setLoading(false));
+  }, [id]);
+
+  function switchEmailStyle(style: EmailStyle) {
+    if (!job) return;
     setEmailStyle(style);
-    setEmailDraft(EMAIL_TEMPLATES[style].generate(CLIENT_NAME, NOTES, dateStr));
-  };
+    const dateStr = new Date(job.scheduled_date).toLocaleDateString("nl-NL", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+    setEmailDraft(
+      EMAIL_TEMPLATES[style].generate(job.client?.name ?? "klant", notesDraft, dateStr)
+    );
+  }
 
-  const handleGenerateReport = async () => {
+  async function handleGenerateReport() {
+    if (!job) return;
     setGenerating(true);
     try {
+      const dateStr = new Date(job.scheduled_date).toLocaleDateString("nl-NL", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      });
+      const beforePhoto = job.photos.find((p) => p.type === "before");
+      const afterPhoto = job.photos.find((p) => p.type === "after");
+
       const res = await fetch("/api/report/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           style: "invoice",
-          client: { name: CLIENT_NAME, address: CLIENT_ADDRESS, postcode: "7551 AB Hengelo" },
-          worker: WORKER,
-          notes: NOTES,
-          beforeTime: "08:32",
-          afterTime: "11:45",
+          date: dateStr,
+          client: {
+            name: job.client?.name ?? "Onbekend",
+            address: job.client?.address ?? "",
+            postcode: "",
+          },
+          worker: job.user?.name ?? "Onbekend",
+          notes: notesDraft,
+          beforePhoto: beforePhoto?.url ?? undefined,
+          afterPhoto: afterPhoto?.url ?? undefined,
+          beforeTime: beforePhoto
+            ? new Date(beforePhoto.taken_at).toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" })
+            : undefined,
+          afterTime: afterPhoto
+            ? new Date(afterPhoto.taken_at).toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" })
+            : undefined,
         }),
       });
 
@@ -122,15 +162,45 @@ export default function JobDetailPage({ params }: PageProps) {
     } finally {
       setGenerating(false);
     }
+  }
+
+  if (loading) {
+    return (
+      <div className="max-w-4xl mx-auto text-center py-12 text-gray-500">
+        Opdracht laden...
+      </div>
+    );
+  }
+
+  if (notFound || !job) {
+    return (
+      <div className="max-w-4xl mx-auto space-y-4 text-center py-12">
+        <div className="text-5xl">⚠️</div>
+        <h1 className="text-xl font-bold">Opdracht niet gevonden</h1>
+        <Link href="/dashboard" className="inline-block text-green-700 hover:underline">
+          Terug naar overzicht
+        </Link>
+      </div>
+    );
+  }
+
+  const statusConfig = STATUS_LABEL[job.status] ?? {
+    label: job.status,
+    color: "bg-gray-100 text-gray-700",
   };
+  const beforePhoto = job.photos.find((p) => p.type === "before");
+  const afterPhoto = job.photos.find((p) => p.type === "after");
+  const dateStr = new Date(job.scheduled_date).toLocaleDateString("nl-NL", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="flex items-center gap-3">
-        <Link
-          href="/dashboard"
-          className="text-gray-400 hover:text-gray-600 transition"
-        >
+        <Link href="/dashboard" className="text-gray-400 hover:text-gray-600 transition">
           &larr; Terug
         </Link>
         <h1 className="text-2xl font-bold">Opdracht detail</h1>
@@ -138,79 +208,90 @@ export default function JobDetailPage({ params }: PageProps) {
 
       {/* Client info */}
       <div className="bg-white rounded-xl p-5 border border-gray-100">
-        <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="font-semibold text-lg">{CLIENT_NAME}</h2>
-            <p className="text-sm text-gray-500">{CLIENT_ADDRESS}</p>
-            <p className="text-sm text-gray-400 mt-1">Medewerker: {WORKER}</p>
+            <h2 className="font-semibold text-lg">{job.client?.name ?? "Onbekende klant"}</h2>
+            <p className="text-sm text-gray-500">{job.client?.address ?? ""}</p>
+            <p className="text-sm text-gray-400 mt-1">
+              Medewerker: {job.user?.name ?? "Onbekend"}
+            </p>
             <p className="text-sm text-gray-400">Datum: {dateStr}</p>
           </div>
-          <span className="text-xs font-medium px-3 py-1 rounded-full bg-green-50 text-green-800">
-            Foto&apos;s compleet
+          <span className={`text-xs font-medium px-3 py-1 rounded-full ${statusConfig.color}`}>
+            {statusConfig.label}
           </span>
         </div>
       </div>
 
-      {/* Before / After comparison */}
+      {/* Before / After */}
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <h3 className="font-medium text-orange-600 flex items-center gap-2">
             <span className="w-3 h-3 rounded-full bg-orange-500" />
             VOOR
-            <span className="text-xs text-gray-400 font-normal">08:32</span>
+            {beforePhoto && (
+              <span className="text-xs text-gray-400 font-normal">
+                {new Date(beforePhoto.taken_at).toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" })}
+              </span>
+            )}
           </h3>
-          <div className="aspect-[4/3] bg-orange-50 rounded-xl flex items-center justify-center border-2 border-dashed border-orange-200">
-            <div className="text-center text-orange-400">
-              <div className="text-4xl mb-2">🏡</div>
-              <div className="text-sm">Demo: voor-foto</div>
+          {beforePhoto?.url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={beforePhoto.url} alt="Voor-foto" className="w-full aspect-[4/3] object-cover rounded-xl" />
+          ) : (
+            <div className="aspect-[4/3] bg-orange-50 rounded-xl flex items-center justify-center border-2 border-dashed border-orange-200 text-orange-400 text-sm">
+              Nog geen voor-foto
             </div>
-          </div>
+          )}
         </div>
         <div className="space-y-2">
           <h3 className="font-medium text-green-600 flex items-center gap-2">
             <span className="w-3 h-3 rounded-full bg-green-500" />
             NA
-            <span className="text-xs text-gray-400 font-normal">11:45</span>
+            {afterPhoto && (
+              <span className="text-xs text-gray-400 font-normal">
+                {new Date(afterPhoto.taken_at).toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" })}
+              </span>
+            )}
           </h3>
-          <div className="aspect-[4/3] bg-green-50 rounded-xl flex items-center justify-center border-2 border-dashed border-green-200">
-            <div className="text-center text-green-400">
-              <div className="text-4xl mb-2">🌳</div>
-              <div className="text-sm">Demo: na-foto</div>
+          {afterPhoto?.url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={afterPhoto.url} alt="Na-foto" className="w-full aspect-[4/3] object-cover rounded-xl" />
+          ) : (
+            <div className="aspect-[4/3] bg-green-50 rounded-xl flex items-center justify-center border-2 border-dashed border-green-200 text-green-400 text-sm">
+              Nog geen na-foto
             </div>
-          </div>
+          )}
         </div>
       </div>
 
       {/* Notes */}
       <div className="bg-white rounded-xl p-5 border border-gray-100">
-        <h3 className="font-medium mb-2">Opmerkingen</h3>
+        <h3 className="font-medium mb-2">Notities</h3>
         <textarea
-          placeholder="Voeg opmerkingen toe voor de klant..."
+          value={notesDraft}
+          onChange={(e) => setNotesDraft(e.target.value)}
+          placeholder="Voeg opmerkingen toe..."
           className="w-full p-3 border border-gray-200 rounded-lg resize-none h-24 text-sm"
-          defaultValue={NOTES}
         />
       </div>
 
-      {/* Generate report */}
       <button
         onClick={handleGenerateReport}
         disabled={generating}
-        className="w-full py-3 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full py-3 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700 transition disabled:opacity-50"
       >
         {generating ? "Rapport genereren..." : "Genereer rapport (PDF)"}
       </button>
 
-      {/* Concept e-mail */}
+      {/* Concept email */}
       <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
         <div className="px-5 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
           <h3 className="font-medium text-sm">Concept e-mail naar klant</h3>
-          {reportGenerated && (
-            <span className="text-xs text-green-600 font-medium">PDF bijlage klaar</span>
-          )}
+          {reportGenerated && <span className="text-xs text-green-600 font-medium">PDF bijlage klaar</span>}
         </div>
 
         <div className="p-5 space-y-3">
-          {/* Email style selector */}
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-2">Mailtoon</label>
             <div className="flex gap-2">
@@ -218,10 +299,8 @@ export default function JobDetailPage({ params }: PageProps) {
                 <button
                   key={key}
                   onClick={() => switchEmailStyle(key)}
-                  className={`flex-1 py-2 px-3 rounded-lg text-xs font-medium transition ${
-                    emailStyle === key
-                      ? "bg-green-600 text-white"
-                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  className={`flex-1 py-2 px-2 rounded-lg text-xs font-medium transition ${
+                    emailStyle === key ? "bg-green-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                   }`}
                 >
                   <div>{tmpl.label}</div>
@@ -261,31 +340,22 @@ export default function JobDetailPage({ params }: PageProps) {
               value={emailDraft}
               onChange={(e) => setEmailDraft(e.target.value)}
               className="w-full p-3 border border-gray-200 rounded-lg resize-none text-sm font-mono leading-relaxed"
-              rows={14}
+              rows={12}
             />
           </div>
 
           <div className="flex items-center gap-3">
             <button
               disabled={!emailTo}
-              className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition disabled:opacity-40"
             >
               Verstuur e-mail {reportGenerated ? "+ PDF bijlage" : "(genereer eerst rapport)"}
             </button>
-            <button className="py-2.5 px-4 bg-gray-100 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-200 transition">
-              Kopieer tekst
-            </button>
           </div>
-
-          <p className="text-xs text-gray-400">
-            De e-mail handtekening kun je aanpassen in Instellingen &gt; Rapportage.
-          </p>
         </div>
       </div>
 
-      <p className="text-xs text-gray-400 text-center">
-        Opdracht ID: {id} (demo-data)
-      </p>
+      <p className="text-xs text-gray-400 text-center">Opdracht ID: {job.id}</p>
     </div>
   );
 }
