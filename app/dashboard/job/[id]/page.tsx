@@ -77,6 +77,8 @@ export default function JobDetailPage({ params }: PageProps) {
   const [emailDraft, setEmailDraft] = useState("");
   const [emailSubject, setEmailSubject] = useState("");
   const [notesDraft, setNotesDraft] = useState("");
+  const [downloadingEml, setDownloadingEml] = useState(false);
+  const [emlDownloaded, setEmlDownloaded] = useState(false);
 
   useEffect(() => {
     fetch(`/api/jobs/${id}`)
@@ -161,6 +163,50 @@ export default function JobDetailPage({ params }: PageProps) {
       setReportGenerated(true);
     } finally {
       setGenerating(false);
+    }
+  }
+
+  async function handleDownloadEml() {
+    if (!job || !emailTo || !emailSubject || !emailDraft) return;
+    setDownloadingEml(true);
+    setEmlDownloaded(false);
+    try {
+      const res = await fetch("/api/email/draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jobId: job.id,
+          emailTo,
+          emailSubject,
+          emailBody: emailDraft,
+          pdfStyle: "invoice",
+          notes: notesDraft,
+        }),
+      });
+
+      if (!res.ok) {
+        alert("Concept genereren mislukt. Probeer opnieuw.");
+        return;
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+
+      // Pak filename uit Content-Disposition header
+      const disp = res.headers.get("Content-Disposition") ?? "";
+      const filenameMatch = disp.match(/filename="([^"]+)"/);
+      const filename = filenameMatch?.[1] ?? "concept-rapport.eml";
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setEmlDownloaded(true);
+    } finally {
+      setDownloadingEml(false);
     }
   }
 
@@ -344,14 +390,34 @@ export default function JobDetailPage({ params }: PageProps) {
             />
           </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              disabled={!emailTo}
-              className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition disabled:opacity-40"
-            >
-              Verstuur e-mail {reportGenerated ? "+ PDF bijlage" : "(genereer eerst rapport)"}
-            </button>
+          <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800 flex items-start gap-2">
+            <span className="text-base leading-none">🛡️</span>
+            <div>
+              <p className="font-medium">Geen automatische verzending</p>
+              <p className="text-amber-700">
+                Wij sturen niets naar de klant. Jij downloadt een concept, opent het in je
+                eigen mail-app, en verstuurt het zelf.
+              </p>
+            </div>
           </div>
+
+          <button
+            onClick={handleDownloadEml}
+            disabled={!emailTo || downloadingEml}
+            className="w-full py-3 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {downloadingEml
+              ? "Concept genereren..."
+              : emlDownloaded
+                ? "✅ Concept gedownload (nogmaals?)"
+                : "💾 Download als concept-mail (.eml met PDF bijlage)"}
+          </button>
+
+          <p className="text-xs text-gray-500 text-center">
+            Dubbelklik het .eml bestand om het in je mail-app te openen als concept.
+            <br />
+            Bijlage en bericht staan er al in.
+          </p>
         </div>
       </div>
 

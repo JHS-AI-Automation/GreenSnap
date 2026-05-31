@@ -8,6 +8,10 @@ import {
   DEMO_USER_ID,
   PHOTOS_BUCKET,
 } from "@/lib/constants";
+import {
+  formatClientButtonLabel,
+  parseClientButtonText,
+} from "@/lib/telegram-helpers";
 
 const supabase = getServerClient();
 
@@ -220,7 +224,9 @@ export async function POST(request: NextRequest) {
     const count = session.photoFileIds.length;
 
     const clients = await getClients();
-    const clientButtons = clients.map((c) => [{ text: c.name }]);
+    const clientButtons = clients.map((c) => [
+      { text: formatClientButtonLabel(c) },
+    ]);
     clientButtons.push([{ text: "📍 Stuur mijn locatie" }]);
     clientButtons.push([{ text: "✅ Klaar, opslaan" }]);
 
@@ -311,16 +317,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Client selection by name
+    // Client selection: parse multi-line button text (name\naddress) of getypte naam/adres
     const clients = await getClients();
-    const matchedClient = clients.find(
-      (c) =>
-        c.name.toLowerCase() === text ||
-        text.includes(c.name.toLowerCase().split(".")[1]?.trim() ?? "___")
-    );
+    const matchedClient = parseClientButtonText(text, clients);
 
     if (!matchedClient) {
-      await sendMessage(chatId, "Ik ken die klant niet. Kies een van de opties, of stuur je locatie 📍.");
+      await sendMessage(
+        chatId,
+        "Ik ken die klant niet. Kies een van de opties, typ een deel van de straatnaam, of stuur je locatie 📍."
+      );
       return NextResponse.json({ ok: true });
     }
 
