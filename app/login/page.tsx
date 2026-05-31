@@ -1,14 +1,25 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<main className="flex-1 flex items-center justify-center">Laden...</main>}>
+      <LoginContent />
+    </Suspense>
+  );
+}
+
+function LoginContent() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const params = useSearchParams();
+  const resetSuccess = params.get("reset") === "success";
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,6 +57,12 @@ export default function LoginPage() {
           <h1 className="text-2xl font-bold text-gray-900">Inloggen</h1>
           <p className="text-sm text-gray-500">Eigenaar dashboard</p>
         </div>
+
+        {resetSuccess && (
+          <div className="p-3 bg-green-50 text-green-800 text-sm rounded-xl text-center">
+            ✅ Wachtwoord gewijzigd. Je kunt nu inloggen.
+          </div>
+        )}
 
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
@@ -85,6 +102,15 @@ export default function LoginPage() {
           >
             {loading ? "Bezig..." : "Inloggen"}
           </button>
+
+          <div className="text-center">
+            <Link
+              href="/reset-password"
+              className="text-xs text-green-700 hover:underline"
+            >
+              Wachtwoord vergeten?
+            </Link>
+          </div>
         </form>
 
         <p className="text-xs text-gray-400 text-center">
