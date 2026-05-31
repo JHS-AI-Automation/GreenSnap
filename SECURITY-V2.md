@@ -4,6 +4,34 @@
 > Opgesteld vanuit perspectief van privacy/cybersecurity consultant.
 > Status: na commit 55f7307 (klantbeheer + geocoding).
 
+## STATUS (per 2026-05-31): GEPARKEERD
+
+**Beslissing Jasper:** alle security-verbeteringen hieronder worden later opgepakt. Huidige focus = app testen + functionaliteit afmaken.
+
+**Wat de PoC nu accepteert (bewust restrisico):**
+- MFA staat uit (alleen email + wachtwoord)
+- Tenant-ID is nog hardcoded (1 demo-tenant, geen multi-tenant risico zolang dat zo blijft)
+- Service role key wordt server-side gebruikt (RLS-bypass acceptabel voor PoC met 1 tenant)
+- Geen rate limiting (acceptabel zolang URL niet gedeeld wordt)
+- Geen audit log (acceptabel voor PoC)
+- AVG-documenten (DPA's, verwerkingsregister) nog niet ingeregeld
+- Spraakberichten: nog geen consent-flow
+
+**Wanneer security-werk WEL noodzakelijk wordt:**
+- Voor eerste echte klant gaat draaien in productie
+- Voor 2e tenant in dezelfde Supabase database
+- Voor publieke launch (publieke URL gedeeld in marketing)
+- Voor WhatsApp-migratie (Meta vereist privacy-statement)
+
+**Wat we NU wel al hebben gedaan (good enough voor testen):**
+- HTTPS via Vercel
+- Login + auth voor dashboard
+- Private foto-bucket
+- Server-side Supabase keys (niet in frontend)
+- RLS policies aanwezig op tabellen
+
+Dit is veilig genoeg om met 1-2 testklanten te demonstreren. Niet veilig genoeg voor publieke lancering.
+
 ## 1. Wat is er sinds V1 verbeterd?
 
 | Verbetering | Status | Effect |
@@ -427,26 +455,47 @@ Wordt apart aangeleverd, gericht aan groenbedrijf-eigenaren die de app gebruiken
 | Backup verlies | Hoog | Midden | Laag (auto-backup) |
 | Geen audit-trail | Hoog | Hoog | Midden (audit log) |
 
-## 10. Volgende stappen (concreet)
+## 10. Volgende stappen (GEPARKEERD - later oppakken)
 
-### Deze week
+> Volgorde van prioriteit als we security weer oppakken. Niet doen nu.
+
+### Bij eerste echte klant (security-must)
 1. **Schakel MFA in** (4u code + 5min Supabase config)
 2. **Tenant-ID uit sessie halen** (6u code)
 3. **Signed URLs voor foto's** (2u code)
 4. **DPA's tekenen** (Supabase + Vercel, 30 min)
+5. **Wachtwoord-beleid in Supabase** (5 min handmatig)
+6. **Telegram webhook secret verplicht maken** (15 min)
 
-### Volgende 2 weken (parallel)
-5. **WhatsApp Business setup starten** (Meta verification kan duren)
-6. **Dashboard koppelen aan echte data** (8u code)
-7. **Rate limiting** (4u code)
+### Voor WhatsApp-lancering (parallel)
+7. **WhatsApp Business setup starten** (Meta verification 1-7 dagen)
+8. **Dashboard koppelen aan echte data** (8u code)
+9. **Privacyverklaring schrijven** (4u, vereist door Meta)
 
-### Maand 2
-8. **Audit log** (6u)
-9. **GDPR export/delete** (8u)
-10. **WhatsApp implementatie afronden** (8u na verification)
+### Voor schaal (vanaf 5+ klanten)
+10. **Rate limiting** (4u code)
+11. **Audit log** (6u)
+12. **Auto-backup naar S3/Drive** (4u)
+13. **GDPR export/delete endpoints** (8u)
+14. **Verwerkingsregister formaliseren** (4u)
+15. **Lichte DPIA voor spraakberichten** (4u)
 
-**Totaal effort tot productie-grade:** ~60 uur ontwikkeling + 1-2 weken wachttijd Meta-verification.
+### Voor enterprise (50+ klanten)
+16. **Penetratietest extern** (1.500-5.000 EUR, 2 weken)
+17. **ISO 27001 Lite** (consultancy traject, 3 maanden)
+18. **SOC 2 Type 1** (alleen bij US-klanten)
+
+**Totaal effort tot productie-grade voor pilot:** ~60 uur development + 1-2 weken Meta-verification.
+
+**Voor nu: focus op app testen, alle items hierboven kunnen later.**
 
 ---
 
-**Eindoordeel:** GreenSnap is veiliger dan 90% van early-stage SaaS PoC's. De resterende risico's zijn herstelbaar binnen 1 maand werk. AVG-positie is met DPAs + register binnen 2 weken op orde voor lancering bij 1-3 pilot-klanten. Voor 50+ klanten zijn audit logging en GDPR-endpoints randvoorwaarden.
+**Eindoordeel (per 2026-05-31):**
+GreenSnap is veiliger dan 90% van early-stage SaaS PoC's en GOED GENOEG voor testen met 1-2 testklanten. De resterende risico's zijn herstelbaar binnen 1 maand werk en zijn nu GEPARKEERD. Focus is verplaatst naar app-functionaliteit en testen.
+
+**Trigger om security weer op te pakken:**
+- Eerste echte klant wil productie-gebruik
+- Tweede tenant erbij
+- WhatsApp-lancering nadert (Meta vereist privacy-statement)
+- Publieke URL gedeeld in marketing/pitch-materiaal
