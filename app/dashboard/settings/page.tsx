@@ -476,7 +476,7 @@ export default function SettingsPage() {
         <div className="bg-white rounded-xl p-6 border border-gray-100 space-y-4">
           <div className="mb-4">
             <h2 className="text-lg font-bold">Medewerkers</h2>
-            <p className="text-sm text-gray-500">Beheer wie er foto's kan insturen via Telegram.</p>
+            <p className="text-sm text-gray-500">Beheer wie er foto&apos;s kan insturen via Telegram.</p>
           </div>
           <div className="space-y-2">
             {workers.map((w) => (

@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { sendMessage, downloadFile } from "@/lib/telegram";
 import { getSession, updateSession, clearSession } from "@/lib/bot-sessions";
 import { getServerClient } from "@/lib/supabase";
+import { findNearestClient } from "@/lib/matching";
+import {
+  DEMO_TENANT_ID,
+  DEMO_USER_ID,
+  PHOTOS_BUCKET,
+} from "@/lib/constants";
 
 const supabase = getServerClient();
-import { findNearestClient } from "@/lib/matching";
-
-const DEMO_TENANT = "11111111-1111-1111-1111-111111111111";
-const DEMO_USER = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
 
 interface ClientRow {
   id: string;
@@ -21,7 +23,7 @@ async function getClients(): Promise<ClientRow[]> {
   const { data } = await supabase
     .from("clients")
     .select("id, name, address, lat, lng")
-    .eq("tenant_id", DEMO_TENANT);
+    .eq("tenant_id", DEMO_TENANT_ID);
   return (data as ClientRow[]) ?? [];
 }
 
@@ -49,10 +51,10 @@ async function savePhotos(
   for (const fileId of fileIds) {
     const photoBuffer = await downloadFile(fileId);
     const timestamp = Date.now();
-    const storagePath = `${DEMO_TENANT}/${clientId}/${photoType}-${timestamp}-${savedCount}.jpg`;
+    const storagePath = `${DEMO_TENANT_ID}/${clientId}/${photoType}-${timestamp}-${savedCount}.jpg`;
 
     const { error: uploadError } = await supabase.storage
-      .from("photos")
+      .from(PHOTOS_BUCKET)
       .upload(storagePath, photoBuffer, {
         contentType: "image/jpeg",
         upsert: false,
@@ -65,8 +67,8 @@ async function savePhotos(
 
     await supabase.from("photos").insert({
       job_id: job?.id ?? null,
-      tenant_id: DEMO_TENANT,
-      user_id: DEMO_USER,
+      tenant_id: DEMO_TENANT_ID,
+      user_id: DEMO_USER_ID,
       type: photoType,
       storage_path: storagePath,
       source: "telegram",
@@ -124,10 +126,10 @@ export async function POST(request: NextRequest) {
   if (voice) {
     const voiceBuffer = await downloadFile(voice.file_id);
     const timestamp = Date.now();
-    const storagePath = `${DEMO_TENANT}/voice-notes/opmerking-${timestamp}.ogg`;
+    const storagePath = `${DEMO_TENANT_ID}/voice-notes/opmerking-${timestamp}.ogg`;
 
     const { error } = await supabase.storage
-      .from("photos")
+      .from(PHOTOS_BUCKET)
       .upload(storagePath, voiceBuffer, {
         contentType: "audio/ogg",
         upsert: false,
@@ -139,7 +141,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    const { data: urlData } = supabase.storage.from("photos").getPublicUrl(storagePath);
+    const { data: urlData } = supabase.storage.from(PHOTOS_BUCKET).getPublicUrl(storagePath);
 
     await sendMessage(
       chatId,

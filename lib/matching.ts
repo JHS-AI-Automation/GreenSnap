@@ -1,7 +1,5 @@
-import type { Client, Photo } from "@/types/database";
-
-const MATCH_RADIUS_METERS = 150;
-const TIME_WINDOW_HOURS = 8;
+import type { Photo } from "@/types/database";
+import { MATCH_RADIUS_METERS, TIME_WINDOW_HOURS } from "./constants";
 
 export function haversineDistance(
   lat1: number,
@@ -9,6 +7,13 @@ export function haversineDistance(
   lat2: number,
   lng2: number
 ): number {
+  if (
+    isNaN(lat1) || isNaN(lng1) || isNaN(lat2) || isNaN(lng2) ||
+    lat1 === null || lng1 === null || lat2 === null || lng2 === null
+  ) {
+    return Infinity;
+  }
+
   const R = 6371e3;
   const toRad = (deg: number) => (deg * Math.PI) / 180;
 
@@ -26,12 +31,15 @@ export function findNearestClient<T extends { lat: number; lng: number }>(
   lng: number,
   clients: T[]
 ): T | null {
+  if (isNaN(lat) || isNaN(lng) || !Array.isArray(clients)) return null;
+
   let nearest: T | null = null;
   let minDistance = Infinity;
 
   for (const client of clients) {
+    if (isNaN(client.lat) || isNaN(client.lng)) continue;
     const dist = haversineDistance(lat, lng, client.lat, client.lng);
-    if (dist < MATCH_RADIUS_METERS && dist < minDistance) {
+    if (dist <= MATCH_RADIUS_METERS && dist < minDistance) {
       minDistance = dist;
       nearest = client;
     }
@@ -41,11 +49,13 @@ export function findNearestClient<T extends { lat: number; lng: number }>(
 }
 
 export function isWithinTimeWindow(
-  photo1Time: string,
-  photo2Time: string
+  photo1Time: string | null | undefined,
+  photo2Time: string | null | undefined
 ): boolean {
+  if (!photo1Time || !photo2Time) return false;
   const t1 = new Date(photo1Time).getTime();
   const t2 = new Date(photo2Time).getTime();
+  if (isNaN(t1) || isNaN(t2)) return false;
   const diffHours = Math.abs(t2 - t1) / (1000 * 60 * 60);
   return diffHours <= TIME_WINDOW_HOURS;
 }

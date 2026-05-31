@@ -409,6 +409,7 @@ export function GreenSnapReport({ data }: { data: ReportData }) {
           <View style={s.photoCol}>
             <Text style={[s.photoLabel, s.beforeLabel]}>VOOR</Text>
             {data.beforePhoto ? (
+              // eslint-disable-next-line jsx-a11y/alt-text
               <Image src={data.beforePhoto} style={s.photoImage} />
             ) : (
               <View style={s.photoPlaceholder}>
@@ -425,6 +426,7 @@ export function GreenSnapReport({ data }: { data: ReportData }) {
           <View style={s.photoCol}>
             <Text style={[s.photoLabel, s.afterLabel]}>NA</Text>
             {data.afterPhoto ? (
+              // eslint-disable-next-line jsx-a11y/alt-text
               <Image src={data.afterPhoto} style={s.photoImage} />
             ) : (
               <View style={s.photoPlaceholder}>

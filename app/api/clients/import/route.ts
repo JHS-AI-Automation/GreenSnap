@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerClient } from "@/lib/supabase";
 import { geocodeAddress } from "@/lib/geocoding";
-
-const DEMO_TENANT = "11111111-1111-1111-1111-111111111111";
+import {
+  DEMO_TENANT_ID,
+  MAX_CSV_ROWS,
+  NOMINATIM_RATE_LIMIT_MS,
+} from "@/lib/constants";
 
 interface ImportRow {
   name: string;
@@ -35,8 +38,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Geen rijen om te importeren" }, { status: 400 });
   }
 
-  if (rows.length > 200) {
-    return NextResponse.json({ error: "Maximum 200 klanten per import" }, { status: 400 });
+  if (rows.length > MAX_CSV_ROWS) {
+    return NextResponse.json(
+      { error: `Maximum ${MAX_CSV_ROWS} klanten per import` },
+      { status: 400 }
+    );
   }
 
   const supabase = getServerClient();
@@ -45,7 +51,7 @@ export async function POST(request: NextRequest) {
   const { data: existing } = await supabase
     .from("clients")
     .select("name, address")
-    .eq("tenant_id", DEMO_TENANT);
+    .eq("tenant_id", DEMO_TENANT_ID);
 
   const existingSet = new Set(
     (existing ?? []).map((c) => `${c.name.toLowerCase()}|${c.address.toLowerCase()}`)
@@ -77,7 +83,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Rate limit: 1 request per seconde voor Nominatim
-    if (i > 0) await sleep(1100);
+    if (i > 0) await sleep(NOMINATIM_RATE_LIMIT_MS);
 
     const geo = await geocodeAddress(row.address);
     if (!geo) {
@@ -92,7 +98,7 @@ export async function POST(request: NextRequest) {
 
     if (!dryRun) {
       const { error } = await supabase.from("clients").insert({
-        tenant_id: DEMO_TENANT,
+        tenant_id: DEMO_TENANT_ID,
         name: row.name,
         address: row.address,
         lat: geo.lat,

@@ -1,0 +1,8 @@
+naam,adres,notities
+Fam. Goedebeurt,Brink 3 Deventer,Echte klant
+Fam. Pietersen,Brink 5 Deventer,DUBBEL - staat al in dataset
+Fout Adres BV,Verzonnenstraat 999 Nepstad,Test: niet-bestaand adres
+,Lege naam Test 1 Deventer,Test: lege naam
+Test Lege Adres,,Test: leeg adres
+Fam. Internationaal,Rue de la Paix 5 Parijs,Test: buiten Nederland (countrycode filter)
+Cafe De Hoek,Bursestraat 4 Deventer,Echt adres

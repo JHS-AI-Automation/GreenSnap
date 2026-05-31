@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerClient } from "@/lib/supabase";
 import { geocodeAddress } from "@/lib/geocoding";
-
-const DEMO_TENANT = "11111111-1111-1111-1111-111111111111";
+import { DEMO_TENANT_ID } from "@/lib/constants";
 
 export async function GET() {
   const supabase = getServerClient();
@@ -10,7 +9,7 @@ export async function GET() {
   const { data, error } = await supabase
     .from("clients")
     .select("id, name, address, lat, lng, notes, created_at")
-    .eq("tenant_id", DEMO_TENANT)
+    .eq("tenant_id", DEMO_TENANT_ID)
     .order("name");
 
   if (error) {
@@ -48,7 +47,7 @@ export async function POST(request: NextRequest) {
   const { data, error } = await supabase
     .from("clients")
     .insert({
-      tenant_id: DEMO_TENANT,
+      tenant_id: DEMO_TENANT_ID,
       name,
       address,
       lat: geo.lat,

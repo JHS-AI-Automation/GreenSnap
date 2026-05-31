@@ -2,8 +2,8 @@
 
 import { useState, useRef } from "react";
 import Link from "next/link";
+import { DEMO_TENANT_ID } from "@/lib/constants";
 
-const DEMO_TENANT = "11111111-1111-1111-1111-111111111111";
 const DEMO_OWNER = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 
 const DEMO_JOBS = [
@@ -40,7 +40,7 @@ export default function UploadPage() {
     const formData = new FormData();
     formData.append("file", file);
     formData.append("jobId", selectedJob);
-    formData.append("tenantId", DEMO_TENANT);
+    formData.append("tenantId", DEMO_TENANT_ID);
     formData.append("userId", DEMO_OWNER);
     formData.append("type", photoType);
     if (caption) formData.append("caption", caption);

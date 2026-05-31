@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { findNearestClient, isWithinTimeWindow } from "@/lib/matching";
 import { getServerClient } from "@/lib/supabase";
 
-const DEMO_TENANT = "11111111-1111-1111-1111-111111111111";
+import { DEMO_TENANT_ID } from "@/lib/constants";
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
   const { data: clients } = await supabase
     .from("clients")
     .select("id, name, address, lat, lng")
-    .eq("tenant_id", DEMO_TENANT);
+    .eq("tenant_id", DEMO_TENANT_ID);
 
   const result = {
     matched: false,
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     const { data: beforePhotos } = await supabase
       .from("photos")
       .select("id, user_id, job_id, taken_at, type")
-      .eq("tenant_id", DEMO_TENANT)
+      .eq("tenant_id", DEMO_TENANT_ID)
       .eq("user_id", userId)
       .eq("type", "before")
       .gte("taken_at", `${today}T00:00:00`);

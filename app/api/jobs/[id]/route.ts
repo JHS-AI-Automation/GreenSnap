@@ -12,10 +12,14 @@ export async function GET(
     .from("jobs")
     .select("id, status, scheduled_date, notes, client:clients(id, name, address), user:users(id, name)")
     .eq("id", id)
-    .single();
+    .maybeSingle();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 404 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  if (!data) {
+    return NextResponse.json({ error: "Opdracht niet gevonden" }, { status: 404 });
   }
 
   // Fetch photos for this job

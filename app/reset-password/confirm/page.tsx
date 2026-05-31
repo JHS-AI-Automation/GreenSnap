@@ -17,15 +17,12 @@ function ConfirmContent() {
     // Supabase redirect bevat tokens in URL hash (#access_token=...)
     if (typeof window === "undefined") return;
     const hash = window.location.hash;
-    if (hash.includes("access_token")) {
-      setTokenReady(true);
-    } else if (params.get("error_description")) {
-      setError(decodeURIComponent(params.get("error_description")!));
-    } else {
-      setError(
-        "Geen geldige reset-link. Vraag een nieuwe reset-link aan via 'Wachtwoord vergeten'."
-      );
-    }
+    const errorDesc = params.get("error_description");
+
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (hash.includes("access_token")) setTokenReady(true);
+    else if (errorDesc) setError(decodeURIComponent(errorDesc));
+    else setError("Geen geldige reset-link. Vraag een nieuwe reset-link aan via 'Wachtwoord vergeten'.");
   }, [params]);
 
   async function handleSubmit(e: React.FormEvent) {
