@@ -78,6 +78,12 @@
 - [x] Telegram-bot: /koppel CODE, /vandaag met ▶/⏹-knoppen (inline keyboard), callback_query-handling, live-locatie geofence-prompts (aankomst/vertrek), DEMO_USER weg uit bot
 #### ACTIE VEREIST (handmatig door Jasper, in deze volgorde)
 
+0. **Supabase-project herstellen** — het project is gepauzeerd door free-tier-inactiviteit (12 dagen niet gebruikt sinds 31 mei). Daardoor faalde de CI smoke-test op 12 juni met `TypeError: fetch failed` (DNS van `zphqujezqjddeyfrbsat.supabase.co` bestaat niet meer; de gepushte code zelf was groen):
+   - Log in op [supabase.com](https://supabase.com) → open het GreenSnap-project → klik **Restore project** en wacht tot het weer "Active" is
+   - Staat het project er niet meer? Dan nieuw project aanmaken + keys in `.env.local` en Vercel bijwerken + migratie 001 + 002 + seed draaien
+   - Structureel voorkomen kan met een wekelijkse keep-alive (GitHub Actions cron die een query doet) of een betaald plan — nog niet gebouwd
+   - Controle achteraf: re-run de gefaalde CI-run (`gh run rerun 27406219061`) of check `https://green-snap-rouge.vercel.app/api/clients` (moet een JSON-array geven, geen error)
+
 1. **Migratie 002 draaien in Supabase** — zonder dit crasht de bot op de nieuwe tabellen:
    - Open [supabase.com](https://supabase.com) → jouw project → SQL Editor → New query
    - Plak de volledige inhoud van `supabase/migrations/002_planning_team_klok_crm.sql` en klik Run
