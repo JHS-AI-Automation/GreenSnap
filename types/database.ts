@@ -18,6 +18,10 @@ export interface User {
   name: string;
   phone: string;
   role: UserRole;
+  telegram_chat_id: number | null;
+  active: boolean;
+  link_code: string | null;
+  link_code_expires_at: string | null;
   created_at: string;
 }
 
@@ -29,6 +33,10 @@ export interface Client {
   lat: number;
   lng: number;
   notes: string | null;
+  external_id: string | null;
+  external_source: string | null;
+  email: string | null;
+  phone: string | null;
   created_at: string;
 }
 
@@ -38,17 +46,41 @@ export interface Job {
   id: string;
   tenant_id: TenantId;
   client_id: string;
-  user_id: UserId;
+  user_id: UserId | null;
   status: JobStatus;
   scheduled_date: string;
+  sort_order: number;
   notes: string | null;
   created_at: string;
   client?: Client;
   photos?: Photo[];
 }
 
+export type TimeEntrySource = "manual_telegram" | "geofence_telegram" | "dashboard";
+
+export interface TimeEntry {
+  id: string;
+  tenant_id: TenantId;
+  job_id: string;
+  user_id: UserId;
+  started_at: string;
+  stopped_at: string | null;
+  source: TimeEntrySource;
+  created_at: string;
+}
+
+export interface WorkerLocation {
+  user_id: UserId;
+  tenant_id: TenantId;
+  lat: number;
+  lng: number;
+  updated_at: string;
+  near_client_id: string | null;
+  prompted_job_id: string | null;
+}
+
 export type PhotoType = "before" | "after";
-export type PhotoSource = "pwa" | "whatsapp";
+export type PhotoSource = "pwa" | "whatsapp" | "telegram";
 
 export interface Photo {
   id: string;

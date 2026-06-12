@@ -28,6 +28,14 @@ export const SIGNED_URL_EXPIRY_SECONDS = 3600;
 export const MATCH_RADIUS_METERS = 150;
 export const TIME_WINDOW_HOURS = 8;
 
+// Geofence klokregistratie (enter/exit hysterese)
+export const GEOFENCE_ENTER_METERS = 150;
+export const GEOFENCE_EXIT_METERS = 300;
+
+// Telegram-koppelcodes
+export const LINK_CODE_LENGTH = 6;
+export const LINK_CODE_TTL_HOURS = 24;
+
 // Auth / sessions
 export const PASSWORD_MIN_LENGTH = 8;
 export const SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
