@@ -1,17 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sendMessage, downloadFile } from "@/lib/telegram";
+import { sendMessage, downloadFile, answerCallbackQuery } from "@/lib/telegram";
 import { getSession, updateSession, clearSession } from "@/lib/bot-sessions";
 import { getServerClient } from "@/lib/supabase";
 import { findNearestClient } from "@/lib/matching";
-import {
-  DEMO_TENANT_ID,
-  DEMO_USER_ID,
-  PHOTOS_BUCKET,
-} from "@/lib/constants";
+import { PHOTOS_BUCKET } from "@/lib/constants";
 import {
   formatClientButtonLabel,
   parseClientButtonText,
 } from "@/lib/telegram-helpers";
+import { resolveUserByChatId, linkUserByCode } from "@/lib/bot-user";
+import {
+  getTodaysJobs,
+  getRunningEntry,
+  startClock,
+  stopClock,
+} from "@/lib/clock-db";
+import { formatDuration } from "@/lib/clock-format";
+import { evaluateGeofence, type GeofenceJob } from "@/lib/geofence";
+import type { User } from "@/types/database";
 
 const supabase = getServerClient();
 
@@ -23,39 +29,41 @@ interface ClientRow {
   lng: number;
 }
 
-async function getClients(): Promise<ClientRow[]> {
+async function getClients(tenantId: string): Promise<ClientRow[]> {
   const { data } = await supabase
     .from("clients")
     .select("id, name, address, lat, lng")
-    .eq("tenant_id", DEMO_TENANT_ID);
+    .eq("tenant_id", tenantId);
   return (data as ClientRow[]) ?? [];
 }
 
-async function findJobForClient(clientId: string) {
+async function findJobForClient(clientId: string, userId: string) {
   const { data } = await supabase
     .from("jobs")
     .select("id, status")
     .eq("client_id", clientId)
+    .eq("user_id", userId)
     .eq("scheduled_date", new Date().toISOString().split("T")[0])
     .limit(1)
-    .single();
+    .maybeSingle();
   return data;
 }
 
 async function savePhotos(
+  user: User,
   fileIds: string[],
   photoType: "before" | "after",
   clientId: string,
   clientName: string,
   clientAddress: string
 ) {
-  const job = await findJobForClient(clientId);
+  const job = await findJobForClient(clientId, user.id);
   let savedCount = 0;
 
   for (const fileId of fileIds) {
     const photoBuffer = await downloadFile(fileId);
     const timestamp = Date.now();
-    const storagePath = `${DEMO_TENANT_ID}/${clientId}/${photoType}-${timestamp}-${savedCount}.jpg`;
+    const storagePath = `${user.tenant_id}/${clientId}/${photoType}-${timestamp}-${savedCount}.jpg`;
 
     const { error: uploadError } = await supabase.storage
       .from(PHOTOS_BUCKET)
@@ -71,8 +79,8 @@ async function savePhotos(
 
     await supabase.from("photos").insert({
       job_id: job?.id ?? null,
-      tenant_id: DEMO_TENANT_ID,
-      user_id: DEMO_USER_ID,
+      tenant_id: user.tenant_id,
+      user_id: user.id,
       type: photoType,
       storage_path: storagePath,
       source: "telegram",
@@ -90,6 +98,160 @@ async function savePhotos(
   return { savedCount, jobLinked: !!job, clientName, clientAddress };
 }
 
+// Live-locatie-update: geofence-check tegen jobs van vandaag, prompt bij aankomst/vertrek.
+async function handleLocationUpdate(user: User, chatId: number, lat: number, lng: number) {
+  const { data: prevRow } = await supabase
+    .from("worker_locations")
+    .select("*")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  const prev = {
+    nearClientId: prevRow?.near_client_id ?? null,
+    promptedJobId: prevRow?.prompted_job_id ?? null,
+  };
+
+  const jobs = await getTodaysJobs(user.id, user.tenant_id);
+  const geofenceJobs: GeofenceJob[] = jobs.map((j) => ({
+    jobId: j.id,
+    clientId: j.client.id,
+    clientName: j.client.name,
+    lat: j.client.lat,
+    lng: j.client.lng,
+  }));
+  const runningEntry = await getRunningEntry(user.id);
+  const running = runningEntry
+    ? { jobId: runningEntry.job_id, entryId: runningEntry.id }
+    : null;
+
+  const result = evaluateGeofence(prev, { lat, lng }, geofenceJobs, running);
+
+  const { error: upsertError } = await supabase.from("worker_locations").upsert({
+    user_id: user.id,
+    tenant_id: user.tenant_id,
+    lat,
+    lng,
+    updated_at: new Date().toISOString(),
+    near_client_id: result.state.nearClientId,
+    prompted_job_id: result.state.promptedJobId,
+  });
+  if (upsertError) {
+    console.error("[Bot] worker_locations upsert:", upsertError);
+  }
+
+  if (result.action === "prompt_start" && result.job) {
+    await sendMessage(
+      chatId,
+      `📍 Je bent aangekomen bij <b>${result.job.clientName}</b>. Klok starten?`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "▶ Start klok", callback_data: `ck:start:${result.job.jobId}` }],
+          ],
+        },
+      }
+    );
+  } else if (result.action === "prompt_stop" && result.job) {
+    await sendMessage(
+      chatId,
+      `📍 Je bent vertrokken bij <b>${result.job.clientName}</b>. Klok stoppen?`,
+      {
+        reply_markup: {
+          inline_keyboard: [[{ text: "⏹ Stop klok", callback_data: "ck:stop" }]],
+        },
+      }
+    );
+  }
+}
+
+// Klok-knoppen (▶/⏹) uit /vandaag en geofence-prompts.
+async function handleCallbackQuery(callbackQuery: {
+  id: string;
+  data?: string;
+  message?: { chat?: { id?: number } };
+}) {
+  const chatId = callbackQuery.message?.chat?.id;
+  const data = callbackQuery.data ?? "";
+  if (!chatId) {
+    await answerCallbackQuery(callbackQuery.id);
+    return;
+  }
+
+  const user = await resolveUserByChatId(chatId);
+  if (!user) {
+    await answerCallbackQuery(callbackQuery.id, "Niet gekoppeld. Stuur /koppel CODE.");
+    return;
+  }
+
+  if (data.startsWith("ck:start:")) {
+    const jobId = data.slice("ck:start:".length);
+    const result = await startClock(user.id, user.tenant_id, jobId, "manual_telegram");
+    if ("error" in result) {
+      await answerCallbackQuery(
+        callbackQuery.id,
+        result.error === "already_running"
+          ? "Klok loopt al op deze opdracht."
+          : "Klok starten mislukt, probeer opnieuw."
+      );
+      return;
+    }
+    await answerCallbackQuery(callbackQuery.id, "Klok gestart ✅");
+    let msg = "▶ <b>Klok gestart.</b>";
+    if (result.stopped) {
+      const ms = Date.now() - new Date(result.stopped.started_at).getTime();
+      msg += `\n<i>Vorige klok automatisch gestopt na ${formatDuration(ms)}.</i>`;
+    }
+    await sendMessage(chatId, msg);
+    return;
+  }
+
+  if (data === "ck:stop") {
+    const running = await getRunningEntry(user.id);
+    if (!running) {
+      await answerCallbackQuery(callbackQuery.id, "Er loopt geen klok.");
+      return;
+    }
+    const result = await stopClock(running.id);
+    if ("error" in result) {
+      await answerCallbackQuery(callbackQuery.id, "Klok stoppen mislukt, probeer opnieuw.");
+      return;
+    }
+    const ms =
+      new Date(result.entry.stopped_at!).getTime() -
+      new Date(result.entry.started_at).getTime();
+    await answerCallbackQuery(callbackQuery.id, "Klok gestopt ✅");
+    await sendMessage(chatId, `⏹ <b>Klok gestopt</b> na ${formatDuration(ms)}.`);
+    return;
+  }
+
+  await answerCallbackQuery(callbackQuery.id);
+}
+
+// Dagplanning met start/stop-knoppen per job.
+async function sendVandaag(user: User, chatId: number) {
+  const jobs = await getTodaysJobs(user.id, user.tenant_id);
+  if (jobs.length === 0) {
+    await sendMessage(chatId, "📅 Geen opdrachten gepland voor vandaag.");
+    return;
+  }
+  const running = await getRunningEntry(user.id);
+
+  const lines = jobs.map((j, i) => {
+    const marker = running?.job_id === j.id ? " ⏱ <b>(klok loopt)</b>" : "";
+    return `${i + 1}. <b>${j.client.name}</b>${marker}\n   📍 ${j.client.address}`;
+  });
+  const buttons = jobs.map((j) =>
+    running?.job_id === j.id
+      ? [{ text: `⏹ Stop ${j.client.name}`, callback_data: "ck:stop" }]
+      : [{ text: `▶ Start ${j.client.name}`, callback_data: `ck:start:${j.id}` }]
+  );
+
+  await sendMessage(
+    chatId,
+    `📅 <b>Jouw planning voor vandaag</b>\n\n${lines.join("\n")}`,
+    { reply_markup: { inline_keyboard: buttons } }
+  );
+}
+
 export async function POST(request: NextRequest) {
   const webhookSecret = request.headers.get("x-telegram-bot-api-secret-token");
   const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
@@ -98,6 +260,28 @@ export async function POST(request: NextRequest) {
   }
 
   const update = await request.json();
+
+  // === CALLBACK QUERY: klok-knoppen ===
+  if (update.callback_query) {
+    await handleCallbackQuery(update.callback_query);
+    return NextResponse.json({ ok: true });
+  }
+
+  // === EDITED MESSAGE: live-locatie-updates voor geofence ===
+  if (update.edited_message?.location) {
+    const locChatId = update.edited_message.chat.id;
+    const locUser = await resolveUserByChatId(locChatId);
+    if (locUser) {
+      await handleLocationUpdate(
+        locUser,
+        locChatId,
+        update.edited_message.location.latitude,
+        update.edited_message.location.longitude
+      );
+    }
+    return NextResponse.json({ ok: true });
+  }
+
   const message = update.message;
   if (!message) return NextResponse.json({ ok: true });
 
@@ -107,6 +291,42 @@ export async function POST(request: NextRequest) {
   const voice = message.voice;
   const location = message.location;
   const session = getSession(chatId);
+
+  // === /koppel CODE: chat aan medewerker koppelen (werkt zonder bestaande koppeling) ===
+  const koppelMatch = text.match(/^\/koppel\s+([a-z0-9]+)$/i);
+  if (koppelMatch) {
+    const result = await linkUserByCode(chatId, koppelMatch[1]);
+    if ("error" in result) {
+      const uitleg =
+        result.error === "expired"
+          ? "Deze koppelcode is verlopen. Vraag je werkgever om een nieuwe code."
+          : result.error === "not_found"
+          ? "Deze koppelcode ken ik niet. Controleer de code en probeer opnieuw."
+          : "Er ging iets mis bij het koppelen. Probeer het later opnieuw.";
+      await sendMessage(chatId, `❌ ${uitleg}`);
+      return NextResponse.json({ ok: true });
+    }
+    await sendMessage(
+      chatId,
+      `✅ Welkom <b>${result.user.name}</b>! Je bent gekoppeld.\n\n` +
+        "📅 Typ /vandaag voor je planning met start/stop-knoppen.\n" +
+        "📸 Stuur foto's voor een voor/na-rapport.\n" +
+        "📍 Deel 's ochtends je live-locatie en ik vraag automatisch of de klok aan moet bij aankomst."
+    );
+    return NextResponse.json({ ok: true });
+  }
+
+  // === Niet-gekoppelde chats krijgen alleen koppel-instructie ===
+  const user = await resolveUserByChatId(chatId);
+  if (!user) {
+    await sendMessage(
+      chatId,
+      "👋 Je bent nog niet gekoppeld.\n\n" +
+        "Vraag je werkgever om een koppelcode en stuur:\n" +
+        "<b>/koppel CODE</b>"
+    );
+    return NextResponse.json({ ok: true });
+  }
 
   // === /start ===
   if (text === "/start") {
@@ -119,6 +339,8 @@ export async function POST(request: NextRequest) {
         "2. Stuur 1 of meer foto's\n" +
         "3. Kies de klant (of stuur je locatie 📍)\n" +
         "4. Klaar! Stuur meer foto's of begin opnieuw\n\n" +
+        "⏱ <b>Klok:</b> typ /vandaag voor je planning met start/stop-knoppen.\n" +
+        "📍 Deel je live-locatie en ik vraag bij aankomst automatisch of de klok aan moet.\n\n" +
         "💡 <i>Tip: stuur eerst alle VOOR-foto's bij aankomst, dan alle NA-foto's bij vertrek.</i>\n" +
         "🎤 <i>Je kunt ook een spraakbericht sturen als opmerking bij je foto's.</i>"
     );
@@ -126,11 +348,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
+  // === /vandaag: dagplanning + klok-knoppen ===
+  if (text === "/vandaag") {
+    await sendVandaag(user, chatId);
+    return NextResponse.json({ ok: true });
+  }
+
   // === VOICE MESSAGE: save as audio note ===
   if (voice) {
     const voiceBuffer = await downloadFile(voice.file_id);
     const timestamp = Date.now();
-    const storagePath = `${DEMO_TENANT_ID}/voice-notes/opmerking-${timestamp}.ogg`;
+    const storagePath = `${user.tenant_id}/voice-notes/opmerking-${timestamp}.ogg`;
 
     const { error } = await supabase.storage
       .from(PHOTOS_BUCKET)
@@ -189,7 +417,7 @@ export async function POST(request: NextRequest) {
 
     await sendMessage(
       chatId,
-      "Stuur een foto om te beginnen! 📸\nOf typ /start voor uitleg."
+      "Stuur een foto om te beginnen! 📸\nOf typ /vandaag voor je planning, /start voor uitleg."
     );
     return NextResponse.json({ ok: true });
   }
@@ -223,7 +451,7 @@ export async function POST(request: NextRequest) {
     const typeLabel = isBefore ? "VOOR" : "NA";
     const count = session.photoFileIds.length;
 
-    const clients = await getClients();
+    const clients = await getClients(user.tenant_id);
     const clientButtons = clients.map((c) => [
       { text: formatClientButtonLabel(c) },
     ]);
@@ -264,7 +492,7 @@ export async function POST(request: NextRequest) {
 
     // Location received: GPS match
     if (location) {
-      const clients = await getClients();
+      const clients = await getClients(user.tenant_id);
       const nearest = findNearestClient(location.latitude, location.longitude, clients);
 
       if (!nearest) {
@@ -277,6 +505,7 @@ export async function POST(request: NextRequest) {
 
       // Auto-match found, save all photos
       const result = await savePhotos(
+        user,
         session.photoFileIds,
         session.photoType!,
         nearest.id,
@@ -318,7 +547,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Client selection: parse multi-line button text (name\naddress) of getypte naam/adres
-    const clients = await getClients();
+    const clients = await getClients(user.tenant_id);
     const matchedClient = parseClientButtonText(text, clients);
 
     if (!matchedClient) {
@@ -331,6 +560,7 @@ export async function POST(request: NextRequest) {
 
     // Client matched, save all photos
     const result = await savePhotos(
+      user,
       session.photoFileIds,
       session.photoType!,
       matchedClient.id,

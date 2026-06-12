@@ -33,11 +33,27 @@ export async function downloadFile(fileId: string): Promise<Buffer> {
   return Buffer.from(await res.arrayBuffer());
 }
 
+export async function answerCallbackQuery(callbackQueryId: string, text?: string) {
+  const res = await fetch(`${API_BASE}/answerCallbackQuery`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      callback_query_id: callbackQueryId,
+      ...(text ? { text } : {}),
+    }),
+  });
+  return res.json();
+}
+
 export async function setWebhook(webhookUrl: string) {
   const res = await fetch(`${API_BASE}/setWebhook`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url: webhookUrl }),
+    body: JSON.stringify({
+      url: webhookUrl,
+      // Zonder deze lijst stuurt Telegram geen callback-knoppen of live-locatie-updates
+      allowed_updates: ["message", "edited_message", "callback_query"],
+    }),
   });
   return res.json();
 }
