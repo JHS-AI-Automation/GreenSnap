@@ -63,6 +63,28 @@
 - [x] Insert in photos tabel
 - [x] Job status auto-update (open -> before_done -> photos_complete)
 
+### Stap 9: Planning, team, klok & CRM [BEZIG]
+
+> Spec: `docs/superpowers/specs/2026-06-12-planning-team-klok-crm-design.md`
+> Plan met alle taken: `docs/superpowers/plans/2026-06-12-planning-team-klok-crm.md`
+
+- [x] Migratie 002: time_entries, worker_locations, users-koppelvelden, jobs.sort_order, clients CRM-velden, tenants.integration_api_key, photos.source-constraint-fix
+- [x] TypeScript types + constants (geofence-drempels, link-code)
+- [x] lib/link-code.ts — koppelcodes (TDD, 5 tests)
+- [x] lib/clock-format.ts — duur-weergave (TDD, 5 tests)
+- [x] lib/geofence.ts — enter/exit statemachine met hysterese (TDD, 8 tests)
+- [x] lib/bot-user.ts — chat_id → user resolving + /koppel flow
+- [x] lib/clock-db.ts — start/stop klok (auto-stop vorige, race-safe via partial unique index)
+- [x] Telegram-bot: /koppel CODE, /vandaag met ▶/⏹-knoppen (inline keyboard), callback_query-handling, live-locatie geofence-prompts (aankomst/vertrek), DEMO_USER weg uit bot
+- [ ] **Migratie 002 draaien in Supabase SQL-editor** (geen DB-connectie vanaf hier; copy-paste `supabase/migrations/002_planning_team_klok_crm.sql`)
+- [ ] **Webhook her-registreren** zodat callback-knoppen en live-locatie binnenkomen: `setWebhook` stuurt nu `allowed_updates` mee, dus eenmalig `/api/telegram/setup?url=...` opnieuw aanroepen
+- [ ] Task 9: API users CRUD + link-code-endpoint + time-entries GET (plan task 9)
+- [ ] Task 10: API jobs `?date=` filter + `/api/jobs/reorder` (plan task 10)
+- [ ] Task 11: dashboard teampagina (`/dashboard/team`) + nav-links Team/Planning (plan task 11)
+- [ ] Task 12: dashboard planningpagina (`/dashboard/planning`, drag & drop routevolgorde) (plan task 12)
+- [ ] Task 13: CRM-webhook `/api/integrations/crm` + API-key-beheer in settings (plan task 13)
+- [ ] Task 14: eindcontrole (typecheck, lint, test, build) + VOORTGANG bijwerken
+
 ---
 
 ## NOG TE DOEN (volgende sessies)
