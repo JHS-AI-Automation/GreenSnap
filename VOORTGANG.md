@@ -76,8 +76,31 @@
 - [x] lib/bot-user.ts — chat_id → user resolving + /koppel flow
 - [x] lib/clock-db.ts — start/stop klok (auto-stop vorige, race-safe via partial unique index)
 - [x] Telegram-bot: /koppel CODE, /vandaag met ▶/⏹-knoppen (inline keyboard), callback_query-handling, live-locatie geofence-prompts (aankomst/vertrek), DEMO_USER weg uit bot
-- [ ] **Migratie 002 draaien in Supabase SQL-editor** (geen DB-connectie vanaf hier; copy-paste `supabase/migrations/002_planning_team_klok_crm.sql`)
-- [ ] **Webhook her-registreren** zodat callback-knoppen en live-locatie binnenkomen: `setWebhook` stuurt nu `allowed_updates` mee, dus eenmalig `/api/telegram/setup?url=...` opnieuw aanroepen
+#### ACTIE VEREIST (handmatig door Jasper, in deze volgorde)
+
+1. **Migratie 002 draaien in Supabase** — zonder dit crasht de bot op de nieuwe tabellen:
+   - Open [supabase.com](https://supabase.com) → jouw project → SQL Editor → New query
+   - Plak de volledige inhoud van `supabase/migrations/002_planning_team_klok_crm.sql` en klik Run
+   - Verwacht: "Success. No rows returned"
+   - Controle: `select count(*) from time_entries;` moet `0` geven (geen error)
+
+2. **Webhook her-registreren** — de bot ontvangt anders géén knop-kliks (callback_query) en géén live-locatie-updates (edited_message):
+   - Na deploy naar Vercel (of met ngrok-tunnel): open in de browser
+     `https://<jouw-app-url>/api/telegram/setup?url=https://<jouw-app-url>/api/telegram`
+   - `setWebhook` stuurt nu `allowed_updates: ["message","edited_message","callback_query"]` mee; dit gaat pas in na her-registratie
+
+3. **Jezelf koppelen als test-medewerker** — de bot weigert nu niet-gekoppelde chats. Er is nog geen team-UI (Task 11), dus zet tijdelijk een koppelcode via SQL:
+   ```sql
+   update users
+   set link_code = 'TEST42', link_code_expires_at = now() + interval '24 hours'
+   where role = 'worker' and name = 'NAAM-VAN-TEST-MEDEWERKER';
+   ```
+   Stuur daarna in Telegram: `/koppel TEST42`
+   Verwacht: "✅ Welkom [naam]! Je bent gekoppeld."
+
+4. **Klok testen**: stuur `/vandaag` (vereist een job met `scheduled_date = vandaag` voor die medewerker; maak er evt. een via Dashboard → Nieuwe opdracht). Tik ▶ Start, daarna ⏹ Stop.
+
+5. **Geofence testen** (optioneel, vereist telefoon buiten): deel je live-locatie met de bot (paperclip → Locatie → Live locatie delen) en loop/rijd naar een klantadres met een job van vandaag. Binnen 150 m hoort de prompt "Klok starten?" te komen.
 - [ ] Task 9: API users CRUD + link-code-endpoint + time-entries GET (plan task 9)
 - [ ] Task 10: API jobs `?date=` filter + `/api/jobs/reorder` (plan task 10)
 - [ ] Task 11: dashboard teampagina (`/dashboard/team`) + nav-links Team/Planning (plan task 11)
